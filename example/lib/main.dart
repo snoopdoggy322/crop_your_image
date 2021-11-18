@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(MyApp());
@@ -22,254 +22,179 @@ class _MyAppState extends State<MyApp> {
         primarySwatch: Colors.blue,
       ),
       home: Scaffold(
-        appBar: AppBar(
-          title: Text('Crop Your Image Demo'),
-        ),
-        body: CropSample(),
+        body: ColorefulScreenCrop(),
       ),
     );
   }
 }
 
-class CropSample extends StatefulWidget {
+class ColorefulScreenCrop extends StatefulWidget {
+  const ColorefulScreenCrop();
+
   @override
-  _CropSampleState createState() => _CropSampleState();
+  _ColorefulScreenCropState createState() => _ColorefulScreenCropState();
 }
 
-class _CropSampleState extends State<CropSample> {
-  static const _images = const [
-    'assets/images/city.png',
-    'assets/images/lake.png',
-    'assets/images/train.png',
-    'assets/images/turtois.png',
-  ];
+class _ColorefulScreenCropState extends State<ColorefulScreenCrop> {
+  final _controller = CropController();
+  late final Uint8List imageData;
+  var _isProcessing = false;
+  Rect cropRect = Rect.zero;
 
-  final _cropController = CropController();
-  final _imageDataList = <Uint8List>[];
-
-  var _loadingImage = false;
-  var _currentImage = 0;
-  set currentImage(int value) {
+  set isProcessing(bool value) {
     setState(() {
-      _currentImage = value;
+      _isProcessing = value;
     });
-    _cropController.image = _imageDataList[_currentImage];
   }
 
-  var _isSumbnail = false;
-  var _isCropping = false;
-  var _isCircleUi = false;
   Uint8List? _croppedData;
-  var _statusText = '';
+
+  set croppedData(Uint8List? value) {
+    setState(() {
+      _croppedData = value;
+    });
+  }
 
   @override
   void initState() {
-    _loadAllImages();
+    http
+        .get(Uri.parse(
+            'https://store-images.s-microsoft.com/image/apps.20866.9007199266667349.cd06b2b0-d415-4f7a-bcc8-c9db870a0c97.4b4a0d1e-e2ee-45dc-9a18-77fa30eb8b25?w=672&h=378&q=80&mode=letterbox&background=%23FFE4E4E4&format=jpg'))
+        .then((value) {
+      setState(() {
+        imageData = value.bodyBytes;
+      });
+    });
     super.initState();
-  }
-
-  Future<void> _loadAllImages() async {
-    setState(() {
-      _loadingImage = true;
-    });
-    for (final assetName in _images) {
-      _imageDataList.add(await _load(assetName));
-    }
-    setState(() {
-      _loadingImage = false;
-    });
-  }
-
-  Future<Uint8List> _load(String assetName) async {
-    final assetData = await rootBundle.load(assetName);
-    return assetData.buffer.asUint8List();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      child: Center(
-        child: Visibility(
-          visible: !_loadingImage && !_isCropping,
-          child: Column(
-            children: [
-              if (_imageDataList.length >= 4)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      _buildSumbnail(_imageDataList[0]),
-                      const SizedBox(width: 16),
-                      _buildSumbnail(_imageDataList[1]),
-                      const SizedBox(width: 16),
-                      _buildSumbnail(_imageDataList[2]),
-                      const SizedBox(width: 16),
-                      _buildSumbnail(_imageDataList[3]),
-                    ],
-                  ),
-                ),
-              Expanded(
-                child: Visibility(
-                  visible: _croppedData == null,
-                  child: Stack(
-                    children: [
-                      if (_imageDataList.isNotEmpty)
-                        Crop(
-                          controller: _cropController,
-                          image: _imageDataList[_currentImage],
-                          onCropped: (croppedData) {
-                            setState(() {
-                              _croppedData = croppedData;
-                              _isCropping = false;
-                            });
-                          },
-                          withCircleUi: _isCircleUi,
-                          onStatusChanged: (status) => setState(() {
-                            _statusText = <CropStatus, String>{
-                                  CropStatus.nothing: 'Crop has no image data',
-                                  CropStatus.loading:
-                                      'Crop is now loading given image',
-                                  CropStatus.ready: 'Crop is now ready!',
-                                  CropStatus.cropping:
-                                      'Crop is now cropping image',
-                                }[status] ??
-                                '';
-                          }),
-                          initialSize: 0.5,
-                          maskColor: _isSumbnail ? Colors.white : null,
-                          cornerDotBuilder: (size, edgeAlignment) => _isSumbnail
-                              ? const SizedBox.shrink()
-                              : const DotControl(),
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.lightBlue.shade50,
+        title: Text(
+          'test',
+          style: TextStyle(color: Colors.blue),
+        ),
+        actions: [
+          if (_croppedData == null)
+            IconButton(
+              icon: Icon(Icons.cut),
+              onPressed: () {
+                isProcessing = true;
+                _controller.crop();
+              },
+            ),
+          if (_croppedData != null)
+            IconButton(
+              icon: Icon(Icons.redo),
+              onPressed: () => croppedData = null,
+            ),
+        ],
+        iconTheme: IconThemeData(
+          color: Colors.blue,
+        ),
+      ),
+      body: Visibility(
+        visible: imageData.isNotEmpty && !_isProcessing,
+        child: imageData.isNotEmpty
+            ? Visibility(
+                visible: _croppedData == null,
+                child: Column(
+                  children: [
+                    Container(
+                      height: 300,
+                      child: Crop(
+                        controller: _controller,
+                        image: imageData,
+                        onCropped: (cropped) {
+                          croppedData = cropped;
+                          isProcessing = false;
+                        },
+                        initialSize: 1,
+                        cornerDotBuilder: (size, cornerIndex) => DotControl(
+                          color: const [
+                            Colors.transparent,
+                            Colors.transparent,
+                            Colors.transparent,
+                            Colors.transparent,
+                          ][cornerIndex.index],
                         ),
-                      Positioned(
-                        right: 16,
-                        bottom: 16,
-                        child: GestureDetector(
-                          onTapDown: (_) => setState(() => _isSumbnail = true),
-                          onTapUp: (_) => setState(() => _isSumbnail = false),
-                          child: CircleAvatar(
-                            backgroundColor:
-                                _isSumbnail ? Colors.blue.shade50 : Colors.blue,
-                            child: Center(
-                              child: Icon(Icons.crop_free_rounded),
+                        aspectRatio: 1,
+                        borderRadius: Radius.circular(32),
+                        withCircleUi: false,
+                        onRect: (Rect r) {
+                          setState(() {
+                            cropRect = r;
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      height: 20,
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 100,
+                          height: 100,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(32),
+                            child: PartImagePainter(
+                              rect: cropRect,
+                              image: imageData,
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  replacement: Center(
-                    child: _croppedData == null
-                        ? SizedBox.shrink()
-                        : Image.memory(_croppedData!),
-                  ),
-                ),
-              ),
-              if (_croppedData == null)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.crop_7_5),
-                            onPressed: () {
-                              _isCircleUi = false;
-                              _cropController.aspectRatio = 16 / 4;
-                            },
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.crop_16_9),
-                            onPressed: () {
-                              _isCircleUi = false;
-                              _cropController.aspectRatio = 16 / 9;
-                            },
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.crop_5_4),
-                            onPressed: () {
-                              _isCircleUi = false;
-                              _cropController.aspectRatio = 4 / 3;
-                            },
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.crop_square),
-                            onPressed: () {
-                              _isCircleUi = false;
-                              _cropController
-                                ..withCircleUi = false
-                                ..aspectRatio = 1;
-                            },
-                          ),
-                          IconButton(
-                              icon: Icon(Icons.circle),
-                              onPressed: () {
-                                _isCircleUi = true;
-                                _cropController.withCircleUi = true;
-                              }),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _isCropping = true;
-                            });
-                            _isCircleUi
-                                ? _cropController.cropCircle()
-                                : _cropController.crop();
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            child: Text('CROP IT!'),
+                        SizedBox(
+                          width: 20,
+                        ),
+                        Container(
+                          width: 50,
+                          height: 50,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: PartImagePainter(
+                              rect: cropRect,
+                              image: imageData,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
-              const SizedBox(height: 16),
-              Text(_statusText),
-              const SizedBox(height: 16),
-            ],
-          ),
-          replacement: const CircularProgressIndicator(),
-        ),
+                replacement: _croppedData != null
+                    ? Container(
+                        padding: const EdgeInsets.all(16),
+                        height: double.infinity,
+                        width: double.infinity,
+                        child: Image.memory(
+                          _croppedData!,
+                          fit: BoxFit.contain,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              )
+            : const SizedBox.shrink(),
+        replacement: const Center(child: CircularProgressIndicator()),
       ),
     );
   }
+}
 
-  Expanded _buildSumbnail(Uint8List data) {
-    final index = _imageDataList.indexOf(data);
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          _croppedData = null;
-          currentImage = index;
-        },
-        child: Container(
-          height: 100,
-          decoration: BoxDecoration(
-            border: index == _currentImage
-                ? Border.all(
-                    width: 8,
-                    color: Colors.blue,
-                  )
-                : null,
-          ),
-          child: Image.memory(
-            data,
-            fit: BoxFit.cover,
-          ),
-        ),
-      ),
-    );
+class MyClip extends CustomClipper<Rect> {
+  final Rect rect;
+
+  MyClip(this.rect);
+
+  Rect getClip(Size size) {
+    return rect;
+  }
+
+  bool shouldReclip(oldClipper) {
+    return true;
   }
 }

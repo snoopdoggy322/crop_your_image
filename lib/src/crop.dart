@@ -66,14 +66,19 @@ class Crop extends StatelessWidget {
   /// If default dot Widget with different color is needed, [DotControl] is available.
   final CornerDotBuilder? cornerDotBuilder;
 
+  final Radius borderRadius;
+  final Function(Rect) onRect;
+
   const Crop({
     Key? key,
     required this.image,
     required this.onCropped,
+    required this.onRect,
     this.aspectRatio,
     this.initialSize,
     this.initialArea,
     this.withCircleUi = false,
+    this.borderRadius = const Radius.circular(0),
     this.controller,
     this.onMoved,
     this.onStatusChanged,
@@ -101,11 +106,13 @@ class Crop extends StatelessWidget {
             initialArea: initialArea,
             withCircleUi: withCircleUi,
             controller: controller,
+            borderRadius: borderRadius,
             onMoved: onMoved,
             onStatusChanged: onStatusChanged,
             maskColor: maskColor,
             baseColor: baseColor,
             cornerDotBuilder: cornerDotBuilder,
+            onRect: onRect,
           ),
         );
       },
@@ -126,6 +133,8 @@ class _CropEditor extends StatefulWidget {
   final Color? maskColor;
   final Color baseColor;
   final CornerDotBuilder? cornerDotBuilder;
+  final Radius borderRadius;
+  final Function(Rect) onRect;
 
   const _CropEditor({
     Key? key,
@@ -134,6 +143,7 @@ class _CropEditor extends StatefulWidget {
     this.aspectRatio,
     this.initialSize,
     this.initialArea,
+    this.borderRadius = const Radius.circular(0),
     this.withCircleUi = false,
     this.controller,
     this.onMoved,
@@ -141,6 +151,7 @@ class _CropEditor extends StatefulWidget {
     this.maskColor,
     required this.baseColor,
     this.cornerDotBuilder,
+    required this.onRect,
   }) : super(key: key);
 
   @override
@@ -149,7 +160,8 @@ class _CropEditor extends StatefulWidget {
 
 class _CropEditorState extends State<_CropEditor> {
   late CropController _cropController;
-  late Rect _rect;
+  Rect _rect = Rect.zero;
+  late final Function(Rect) onRect;
   image.Image? _targetImage;
   late Rect _imageRect;
 
@@ -169,10 +181,22 @@ class _CropEditorState extends State<_CropEditor> {
       _rect = newRect;
     });
     widget.onMoved?.call(_rect);
+    final screenSizeRatio = calculator.screenSizeRatio(
+      _targetImage!,
+      MediaQuery.of(context).size,
+    );
+    var newR = Rect.fromLTWH(
+      (_rect.left - _imageRect.left) * screenSizeRatio,
+      (_rect.top - _imageRect.top) * screenSizeRatio,
+      _rect.width * screenSizeRatio,
+      _rect.height * screenSizeRatio,
+    );
+    onRect(newR);
   }
 
   @override
   void initState() {
+    onRect = widget.onRect;
     _cropController = widget.controller ?? CropController();
     _cropController.delegate = CropControllerDelegate()
       ..onCrop = _crop
@@ -313,9 +337,7 @@ class _CropEditorState extends State<_CropEditor> {
               ),
               IgnorePointer(
                 child: ClipPath(
-                  clipper: _withCircleUi
-                      ? _CircleCropAreaClipper(_rect)
-                      : _CropAreaClipper(_rect),
+                  clipper: _withCircleUi ? _CircleCropAreaClipper(_rect) : CropAreaClipper(_rect, widget.borderRadius),
                   child: Container(
                     width: double.infinity,
                     height: double.infinity,
@@ -335,10 +357,17 @@ class _CropEditorState extends State<_CropEditor> {
                       _imageRect,
                     );
                   },
-                  child: Container(
-                    width: _rect.width,
-                    height: _rect.height,
-                    color: Colors.transparent,
+                  child: DottedBorder(
+                    borderType: BorderType.RRect,
+                    radius: Radius.circular((_rect.height) / 8 + 10),
+                    color: Colors.white,
+                    strokeWidth: 4,
+                    dashPattern: [5, 5],
+                    child: Container(
+                      width: _rect.width,
+                      height: _rect.height,
+                      color: Colors.transparent,
+                    ),
                   ),
                 ),
               ),
@@ -419,20 +448,19 @@ class _CropEditorState extends State<_CropEditor> {
   }
 }
 
-class _CropAreaClipper extends CustomClipper<Path> {
+class CropAreaClipper extends CustomClipper<Path> {
   final Rect rect;
+  final Radius borderRadius;
 
-  _CropAreaClipper(this.rect);
+  CropAreaClipper(this.rect, this.borderRadius);
 
   @override
   Path getClip(Size size) {
     return Path()
       ..addPath(
         Path()
-          ..moveTo(rect.left, rect.top)
-          ..lineTo(rect.right, rect.top)
-          ..lineTo(rect.right, rect.bottom)
-          ..lineTo(rect.left, rect.bottom)
+          ..addRRect(RRect.fromRectAndRadius(Rect.fromLTRB(rect.left, rect.top, rect.right + 4, rect.bottom + 5),
+              Radius.circular((rect.width) / 8 + 10)))
           ..close(),
         Offset.zero,
       )
